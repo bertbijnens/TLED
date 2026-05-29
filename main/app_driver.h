@@ -7,6 +7,7 @@
 
 #include <esp_err.h>
 #include <esp_matter.h>
+#include "app_nvs_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +17,69 @@ extern "C" {
  * @brief Opaque handle for the driver
  */
 typedef void *app_driver_handle_t;
+
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t w;
+} tled_rgbw_color_t;
+
+/**
+ * @brief Convert logical RGB to RGBW using the configured SK6812 white mode.
+ *
+ * Pure helper for the output pipeline and unit tests. Input and output channels
+ * are 0-255. Gains are applied after white mixing.
+ */
+static inline uint8_t tled_apply_channel_gain(uint8_t value, uint8_t gain)
+{
+    return (uint8_t)(((uint16_t)value * gain) / 255);
+}
+
+static inline tled_rgbw_color_t tled_rgb_to_rgbw(uint8_t r, uint8_t g, uint8_t b,
+                                                 uint8_t white_mode, uint8_t manual_white,
+                                                 uint8_t gain_r, uint8_t gain_g,
+                                                 uint8_t gain_b, uint8_t gain_w)
+{
+    uint8_t min_rgb = r < g ? r : g;
+    min_rgb = min_rgb < b ? min_rgb : b;
+    uint8_t max_rgb = r > g ? r : g;
+    max_rgb = max_rgb > b ? max_rgb : b;
+
+    uint8_t ro = r;
+    uint8_t go = g;
+    uint8_t bo = b;
+    uint8_t wo = 0;
+
+    switch (white_mode) {
+        case WHITE_MODE_BRIGHTER:
+            wo = min_rgb;
+            break;
+        case WHITE_MODE_NONE:
+            wo = manual_white;
+            break;
+        case WHITE_MODE_DUAL:
+            wo = manual_white > 0 ? manual_white : min_rgb;
+            break;
+        case WHITE_MODE_MAX:
+            wo = max_rgb;
+            break;
+        case WHITE_MODE_ACCURATE:
+        default:
+            ro = r - min_rgb;
+            go = g - min_rgb;
+            bo = b - min_rgb;
+            wo = min_rgb;
+            break;
+    }
+
+    tled_rgbw_color_t out;
+    out.r = tled_apply_channel_gain(ro, gain_r);
+    out.g = tled_apply_channel_gain(go, gain_g);
+    out.b = tled_apply_channel_gain(bo, gain_b);
+    out.w = tled_apply_channel_gain(wo, gain_w);
+    return out;
+}
 
 /**
  * @brief Initialize the LED driver (onboard LED for Phase 1)

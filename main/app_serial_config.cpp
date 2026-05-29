@@ -31,6 +31,7 @@ static void process_command(const char *cmd);
 static void print_help(void);
 static void print_config(void);
 static void handle_set_command(const char *param, const char *value);
+static const char *white_mode_to_str(uint8_t mode);
 
 static void serial_write(const char *str) {
     usb_serial_jtag_write_bytes((const uint8_t *)str, strlen(str), pdMS_TO_TICKS(100));
@@ -170,6 +171,12 @@ static void print_help(void) {
     serial_write("  set order <o>     - Set RGB order: grb, rgb, brg, rbg, bgr, gbr\r\n");
     serial_write("  set name <name>   - Set device name\r\n");
     serial_write("  set poweron <m>   - Power-on behavior: restore, on, off\r\n");
+    serial_write("  set white_mode <m> - RGBW white mode: accurate, brighter, none, dual, max\r\n");
+    serial_write("  set white <n>     - Manual RGBW white level (0-255)\r\n");
+    serial_write("  set gain_r <n>    - Red channel gain (0-255)\r\n");
+    serial_write("  set gain_g <n>    - Green channel gain (0-255)\r\n");
+    serial_write("  set gain_b <n>    - Blue channel gain (0-255)\r\n");
+    serial_write("  set gain_w <n>    - White channel gain (0-255)\r\n");
     serial_write("  save              - Save config and reboot\r\n");
     serial_write("  reboot            - Reboot without saving\r\n");
     serial_write("  factory           - Reset to factory defaults\r\n");
@@ -210,8 +217,35 @@ static void print_config(void) {
     serial_printf("  type       = %s\r\n", type_str);
     serial_printf("  order      = %s\r\n", order_str);
     serial_printf("  poweron    = %s\r\n", poweron_str);
+    serial_printf("  white_mode = %s\r\n", white_mode_to_str(cfg->white_mode));
+    serial_printf("  white      = %d\r\n", cfg->manual_white);
+    serial_printf("  gain_r     = %d\r\n", cfg->gain_r);
+    serial_printf("  gain_g     = %d\r\n", cfg->gain_g);
+    serial_printf("  gain_b     = %d\r\n", cfg->gain_b);
+    serial_printf("  gain_w     = %d\r\n", cfg->gain_w);
     serial_printf("  name       = %s\r\n", cfg->device_name);
     serial_write("\r\n");
+}
+
+static const char *white_mode_to_str(uint8_t mode) {
+    switch (mode) {
+        case WHITE_MODE_ACCURATE: return "accurate";
+        case WHITE_MODE_BRIGHTER: return "brighter";
+        case WHITE_MODE_NONE: return "none";
+        case WHITE_MODE_DUAL: return "dual";
+        case WHITE_MODE_MAX: return "max";
+        default: return "unknown";
+    }
+}
+
+static bool parse_u8_value(const char *value, uint8_t *out) {
+    char *end = NULL;
+    long parsed = strtol(value, &end, 10);
+    if (end == value || *end != '\0' || parsed < 0 || parsed > 255) {
+        return false;
+    }
+    *out = (uint8_t)parsed;
+    return true;
 }
 
 static void handle_set_command(const char *param, const char *value) {
@@ -299,6 +333,50 @@ static void handle_set_command(const char *param, const char *value) {
         } else {
             serial_write("Error: poweron must be restore, on, or off\r\n");
         }
+    }
+    else if (strcmp(param, "white_mode") == 0) {
+        if (strcmp(value, "accurate") == 0) {
+            cfg->white_mode = WHITE_MODE_ACCURATE;
+            serial_write("Set white_mode = accurate\r\n");
+        } else if (strcmp(value, "brighter") == 0) {
+            cfg->white_mode = WHITE_MODE_BRIGHTER;
+            serial_write("Set white_mode = brighter\r\n");
+        } else if (strcmp(value, "none") == 0) {
+            cfg->white_mode = WHITE_MODE_NONE;
+            serial_write("Set white_mode = none\r\n");
+        } else if (strcmp(value, "dual") == 0) {
+            cfg->white_mode = WHITE_MODE_DUAL;
+            serial_write("Set white_mode = dual\r\n");
+        } else if (strcmp(value, "max") == 0) {
+            cfg->white_mode = WHITE_MODE_MAX;
+            serial_write("Set white_mode = max\r\n");
+        } else {
+            serial_write("Error: white_mode must be accurate, brighter, none, dual, or max\r\n");
+        }
+    }
+    else if (strcmp(param, "white") == 0 ||
+             strcmp(param, "gain_r") == 0 ||
+             strcmp(param, "gain_g") == 0 ||
+             strcmp(param, "gain_b") == 0 ||
+             strcmp(param, "gain_w") == 0) {
+        uint8_t n;
+        if (!parse_u8_value(value, &n)) {
+            serial_printf("Error: %s must be 0-255\r\n", param);
+            return;
+        }
+
+        if (strcmp(param, "white") == 0) {
+            cfg->manual_white = n;
+        } else if (strcmp(param, "gain_r") == 0) {
+            cfg->gain_r = n;
+        } else if (strcmp(param, "gain_g") == 0) {
+            cfg->gain_g = n;
+        } else if (strcmp(param, "gain_b") == 0) {
+            cfg->gain_b = n;
+        } else {
+            cfg->gain_w = n;
+        }
+        serial_printf("Set %s = %d\r\n", param, n);
     }
     else {
         serial_printf("Unknown parameter: %s\r\n", param);
