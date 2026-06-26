@@ -15,6 +15,7 @@ static const char *TAG = "tled_config";
 
 #define NVS_NAMESPACE "tled_cfg"
 #define NVS_KEY_CONFIG "config"
+#define TLED_CONFIG_VERSION_POWER_ON 2
 
 // Valid GPIO pins for ESP32-C6 LED data output
 // Avoiding: 9 (boot button), 12-13 (USB), 15 (onboard LED)
@@ -35,10 +36,43 @@ static void set_defaults(tled_config_t *config)
     config->chipset = TLED_DEFAULT_CHIPSET;
     config->max_brightness = TLED_DEFAULT_MAX_BRIGHTNESS;
     config->power_on_behavior = TLED_DEFAULT_POWER_ON;
+    config->white_mode = TLED_DEFAULT_WHITE_MODE;
+    config->manual_white = TLED_DEFAULT_MANUAL_WHITE;
+    config->gain_r = TLED_DEFAULT_CHANNEL_GAIN;
+    config->gain_g = TLED_DEFAULT_CHANNEL_GAIN;
+    config->gain_b = TLED_DEFAULT_CHANNEL_GAIN;
+    config->gain_w = TLED_DEFAULT_CHANNEL_GAIN;
     strncpy(config->device_name, TLED_DEFAULT_DEVICE_NAME, sizeof(config->device_name) - 1);
     config->device_name[sizeof(config->device_name) - 1] = '\0';
     config->config_version = TLED_CONFIG_VERSION;
     config->configured = false;
+}
+
+typedef struct {
+    uint16_t num_leds;
+    uint8_t gpio_pin;
+    uint8_t rgb_order;
+    uint8_t chipset;
+    uint8_t max_brightness;
+    uint8_t power_on_behavior;
+    char device_name[32];
+    uint8_t config_version;
+    bool configured;
+} tled_config_v2_t;
+
+static void migrate_v2_config(const tled_config_v2_t *old_config, tled_config_t *new_config)
+{
+    set_defaults(new_config);
+    new_config->num_leds = old_config->num_leds;
+    new_config->gpio_pin = old_config->gpio_pin;
+    new_config->rgb_order = old_config->rgb_order;
+    new_config->chipset = old_config->chipset;
+    new_config->max_brightness = old_config->max_brightness;
+    new_config->power_on_behavior = old_config->power_on_behavior;
+    strncpy(new_config->device_name, old_config->device_name, sizeof(new_config->device_name) - 1);
+    new_config->device_name[sizeof(new_config->device_name) - 1] = '\0';
+    new_config->configured = old_config->configured;
+    new_config->config_version = TLED_CONFIG_VERSION;
 }
 
 // Validate configuration
@@ -71,6 +105,12 @@ static bool validate_config(const tled_config_t *config)
     // Check power-on behavior
     if (config->power_on_behavior > POWER_ON_OFF) {
         ESP_LOGW(TAG, "Invalid power-on behavior: %d", config->power_on_behavior);
+        return false;
+    }
+
+    // Check RGBW white mode
+    if (config->white_mode > WHITE_MODE_MAX) {
+        ESP_LOGW(TAG, "Invalid white mode: %d", config->white_mode);
         return false;
     }
 
@@ -107,26 +147,46 @@ esp_err_t tled_config_init(void)
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
 
     if (err == ESP_OK) {
-        size_t size = sizeof(tled_config_t);
-        err = nvs_get_blob(handle, NVS_KEY_CONFIG, &s_config, &size);
-        nvs_close(handle);
+        size_t size = 0;
+        err = nvs_get_blob(handle, NVS_KEY_CONFIG, NULL, &size);
 
         if (err == ESP_OK && size == sizeof(tled_config_t)) {
+            err = nvs_get_blob(handle, NVS_KEY_CONFIG, &s_config, &size);
             // Validate loaded config
-            if (validate_config(&s_config)) {
-                ESP_LOGI(TAG, "Config loaded: %d LEDs, GPIO%d, order=%d, chipset=%d, max_bri=%d, name=%s",
+            if (err == ESP_OK && validate_config(&s_config)) {
+                nvs_close(handle);
+                ESP_LOGI(TAG, "Config loaded: %d LEDs, GPIO%d, order=%d, chipset=%d, max_bri=%d, white_mode=%d, gains=%d/%d/%d/%d, name=%s",
                          s_config.num_leds, s_config.gpio_pin, s_config.rgb_order,
-                         s_config.chipset, s_config.max_brightness, s_config.device_name);
+                         s_config.chipset, s_config.max_brightness, s_config.white_mode,
+                         s_config.gain_r, s_config.gain_g, s_config.gain_b, s_config.gain_w,
+                         s_config.device_name);
                 s_initialized = true;
                 return ESP_OK;
             } else {
                 ESP_LOGW(TAG, "Loaded config invalid, using defaults");
                 set_defaults(&s_config);
             }
+        } else if (err == ESP_OK && size == sizeof(tled_config_v2_t)) {
+            tled_config_v2_t old_config;
+            err = nvs_get_blob(handle, NVS_KEY_CONFIG, &old_config, &size);
+            if (err == ESP_OK && old_config.config_version == TLED_CONFIG_VERSION_POWER_ON) {
+                migrate_v2_config(&old_config, &s_config);
+                if (validate_config(&s_config)) {
+                    nvs_close(handle);
+                    ESP_LOGI(TAG, "Migrated v2 config: %d LEDs, GPIO%d, order=%d, chipset=%d, max_bri=%d, name=%s",
+                             s_config.num_leds, s_config.gpio_pin, s_config.rgb_order,
+                             s_config.chipset, s_config.max_brightness, s_config.device_name);
+                    s_initialized = true;
+                    return ESP_OK;
+                }
+            }
+            ESP_LOGW(TAG, "Failed to migrate config blob, using defaults");
+            set_defaults(&s_config);
         } else {
             ESP_LOGW(TAG, "Failed to load config blob, using defaults");
             set_defaults(&s_config);
         }
+        nvs_close(handle);
     } else {
         ESP_LOGI(TAG, "No config in NVS (first boot), using defaults");
     }

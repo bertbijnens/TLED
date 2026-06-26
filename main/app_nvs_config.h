@@ -34,6 +34,15 @@ typedef enum {
     POWER_ON_OFF = 2,       // Always stay off
 } tled_power_on_t;
 
+// SK6812 RGBW white-channel mixing mode
+typedef enum {
+    WHITE_MODE_ACCURATE = 0, // Extract common RGB into W, preserving color accuracy
+    WHITE_MODE_BRIGHTER = 1, // Add common RGB to W while keeping RGB channels
+    WHITE_MODE_NONE = 2,     // No automatic white extraction, manual W only
+    WHITE_MODE_DUAL = 3,     // Manual W when set, otherwise brighter mode
+    WHITE_MODE_MAX = 4,      // Drive W from the strongest RGB channel
+} tled_white_mode_t;
+
 // Configuration structure
 typedef struct {
     uint16_t num_leds;          // Number of LEDs (1-1000)
@@ -42,6 +51,12 @@ typedef struct {
     uint8_t chipset;            // LED chipset (tled_chipset_t)
     uint8_t max_brightness;     // Max brightness limit (0-255)
     uint8_t power_on_behavior;  // Power-on behavior (tled_power_on_t)
+    uint8_t white_mode;         // RGBW white mixing mode (tled_white_mode_t)
+    uint8_t manual_white;       // Manual white channel level (0-255)
+    uint8_t gain_r;             // Red channel gain (0-255)
+    uint8_t gain_g;             // Green channel gain (0-255)
+    uint8_t gain_b;             // Blue channel gain (0-255)
+    uint8_t gain_w;             // White channel gain (0-255)
     char device_name[32];       // Custom device name
     uint8_t config_version;     // Config version for migration
     bool configured;            // True if config has been set
@@ -84,7 +99,10 @@ typedef struct {
 
 #define TLED_DEFAULT_DEVICE_NAME    "TLED"
 #define TLED_DEFAULT_POWER_ON       POWER_ON_RESTORE
-#define TLED_CONFIG_VERSION         2  // Bumped for power_on_behavior field
+#define TLED_DEFAULT_WHITE_MODE     WHITE_MODE_ACCURATE
+#define TLED_DEFAULT_MANUAL_WHITE   0
+#define TLED_DEFAULT_CHANNEL_GAIN   255
+#define TLED_CONFIG_VERSION         3  // Bumped for RGBW white mixing and gains
 
 /**
  * @brief Initialize the config module
@@ -158,4 +176,3 @@ bool tled_config_validate_gpio(uint8_t gpio_pin);
 
 // Alias for reset function
 #define tled_config_reset() tled_config_reset_to_defaults()
-

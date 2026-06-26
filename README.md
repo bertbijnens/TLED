@@ -83,6 +83,9 @@ After reboot, a QR code will appear in the web installer. Scan it with:
 | LED Type | WS2812B | Chipset: WS2812B, WS2811, or SK6812 (RGBW) |
 | RGB Order | GRB | Color byte order (try others if colors are wrong) |
 | Max Brightness | 255 | Limits maximum brightness (saves power) |
+| White Mode | accurate | SK6812 RGBW white mixing: accurate, brighter, none, dual, or max |
+| Manual White | 0 | Manual SK6812 white channel level used by none/dual modes |
+| Channel Gains | 255 | Per-channel RGBW calibration gain (0-255) |
 | Device Name | TLED | Name shown in your smart home app |
 | Power-on | restore | Behavior on power up: restore last state, on, or off |
 
@@ -112,10 +115,30 @@ set order <order>       Set RGB order (grb/rgb/brg/rbg/bgr/gbr)
 set brightness <1-255>  Set max brightness
 set name <name>         Set device name
 set poweron <mode>      Power-on behavior (restore/on/off)
+set white_mode <mode>   RGBW white mode (accurate/brighter/none/dual/max)
+set white <0-255>       Manual RGBW white channel level
+set gain_r <0-255>      Red channel gain
+set gain_g <0-255>      Green channel gain
+set gain_b <0-255>      Blue channel gain
+set gain_w <0-255>      White channel gain
 save                    Save configuration and reboot
 reboot                  Restart device
 factory                 Factory reset (erases settings & commissioning)
 ```
+
+### Matching WLED
+
+For SK6812 RGBW strips, TLED defaults to `white_mode accurate`, matching WLED's accurate auto-calculated white behavior by extracting the common RGB component into the white channel. Use `set white_mode brighter` if WLED is set to the brighter auto-calculate mode, `set white_mode none` for RGB plus a fixed manual white level, `set white_mode dual` to use manual white when nonzero and otherwise fall back to brighter mode, or `set white_mode max` to drive white from the strongest RGB channel.
+
+To match an existing WLED installation, compare these settings first:
+
+- **Auto-calculate white channel from RGB:** start with `accurate`, then try `brighter` if the strip is dimmer than WLED.
+- **RGB order:** use `set order grb|rgb|brg|rbg|bgr|gbr` until red, green, and blue match.
+- **Brightness limiter:** match WLED's current limit with `set brightness <1-255>`, or leave both unlimited for calibration.
+- **White, gamma, and correction:** TLED applies only manual white and linear per-channel gains; disable WLED color correction/gamma while matching, or compensate with `gain_r`, `gain_g`, `gain_b`, and `gain_w`.
+- **Matter capability changes:** if a firmware update changes exposed Matter capabilities, remove and re-pair the device in your Matter controller after flashing.
+
+TLED does not currently expose Matter Color Temperature for RGBW white control. The current Matter endpoint is HSV/RGB brightness only, so this change keeps white mixing in firmware configuration instead of adding a new Color Temperature capability.
 
 ## Building from Source
 

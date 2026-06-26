@@ -97,6 +97,12 @@ typedef struct {
     uint8_t gpio_pin;
     uint8_t max_brightness;
     uint8_t rgb_order;      // RGB byte order (tled_rgb_order_t)
+    uint8_t white_mode;     // RGBW white mixing mode (tled_white_mode_t)
+    uint8_t manual_white;
+    uint8_t gain_r;
+    uint8_t gain_g;
+    uint8_t gain_b;
+    uint8_t gain_w;
 
     // Debounce state for HSV updates (issue 7)
     bool hsv_update_pending;
@@ -126,6 +132,13 @@ static light_driver_t s_light_driver = {
     .num_leds = TLED_DEFAULT_NUM_LEDS,
     .gpio_pin = TLED_DEFAULT_GPIO_PIN,
     .max_brightness = TLED_DEFAULT_MAX_BRIGHTNESS,
+    .rgb_order = TLED_DEFAULT_RGB_ORDER,
+    .white_mode = TLED_DEFAULT_WHITE_MODE,
+    .manual_white = TLED_DEFAULT_MANUAL_WHITE,
+    .gain_r = TLED_DEFAULT_CHANNEL_GAIN,
+    .gain_g = TLED_DEFAULT_CHANNEL_GAIN,
+    .gain_b = TLED_DEFAULT_CHANNEL_GAIN,
+    .gain_w = TLED_DEFAULT_CHANNEL_GAIN,
     .hsv_update_pending = false,
     .hsv_update_time = 0,
     .nvs_save_pending = false,
@@ -270,18 +283,6 @@ static void hsv_to_rgb(uint16_t h, uint8_t s, uint8_t v, uint8_t *r, uint8_t *g,
     }
 }
 
-// Extract white component from RGB for RGBW strips
-static void rgb_to_rgbw(uint8_t r, uint8_t g, uint8_t b,
-                         uint8_t *ro, uint8_t *go, uint8_t *bo, uint8_t *wo)
-{
-    uint8_t w = r < g ? r : g;
-    w = w < b ? w : b;
-    *ro = r - w;
-    *go = g - w;
-    *bo = b - w;
-    *wo = w;
-}
-
 // Remap RGB values based on configured byte order.
 // The led_strip component with LED_PIXEL_FORMAT_GRB always transmits bytes as [G, R, B].
 // If the LED expects a different order, we pre-swap the values so the physical bytes match.
@@ -317,15 +318,21 @@ static void remap_rgb_order(uint8_t order, uint8_t r, uint8_t g, uint8_t b,
 static esp_err_t driver_set_pixel(light_driver_t *driver, int index,
                                    uint8_t r, uint8_t g, uint8_t b)
 {
+    if (driver->is_rgbw) {
+        tled_rgbw_color_t rgbw = tled_rgb_to_rgbw(r, g, b,
+                                                  driver->white_mode,
+                                                  driver->manual_white,
+                                                  driver->gain_r,
+                                                  driver->gain_g,
+                                                  driver->gain_b,
+                                                  driver->gain_w);
+        uint8_t mr, mg, mb;
+        remap_rgb_order(driver->rgb_order, rgbw.r, rgbw.g, rgbw.b, &mr, &mg, &mb);
+        return led_strip_set_pixel_rgbw(driver->strip, index, mr, mg, mb, rgbw.w);
+    }
     // Apply RGB order remapping
     uint8_t mr, mg, mb;
     remap_rgb_order(driver->rgb_order, r, g, b, &mr, &mg, &mb);
-
-    if (driver->is_rgbw) {
-        uint8_t ro, go, bo, wo;
-        rgb_to_rgbw(mr, mg, mb, &ro, &go, &bo, &wo);
-        return led_strip_set_pixel_rgbw(driver->strip, index, ro, go, bo, wo);
-    }
     return led_strip_set_pixel(driver->strip, index, mr, mg, mb);
 }
 
@@ -338,20 +345,6 @@ static esp_err_t update_strip_rgb(light_driver_t *driver, uint8_t r, uint8_t g, 
 
     for (int i = 0; i < driver->num_leds; i++) {
         driver_set_pixel(driver, i, r, g, b);
-    }
-
-    return led_strip_refresh(driver->strip);
-}
-
-// Update strip with per-LED RGB array (for chase effects etc)
-static esp_err_t update_strip_array(light_driver_t *driver, uint8_t (*colors)[3])
-{
-    if (driver->strip == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    for (int i = 0; i < driver->num_leds; i++) {
-        driver_set_pixel(driver, i, colors[i][0], colors[i][1], colors[i][2]);
     }
 
     return led_strip_refresh(driver->strip);
@@ -1058,12 +1051,23 @@ app_driver_handle_t app_driver_light_init(void)
     s_light_driver.gpio_pin = config->gpio_pin;
     s_light_driver.max_brightness = config->max_brightness;
     s_light_driver.rgb_order = config->rgb_order;
+    s_light_driver.white_mode = config->white_mode;
+    s_light_driver.manual_white = config->manual_white;
+    s_light_driver.gain_r = config->gain_r;
+    s_light_driver.gain_g = config->gain_g;
+    s_light_driver.gain_b = config->gain_b;
+    s_light_driver.gain_w = config->gain_w;
 
     static const char *rgb_order_names[] = {"GRB", "RGB", "BRG", "RBG", "BGR", "GBR"};
+    static const char *white_mode_names[] = {"accurate", "brighter", "none", "dual", "max"};
     const char *order_name = (s_light_driver.rgb_order <= RGB_ORDER_GBR)
                              ? rgb_order_names[s_light_driver.rgb_order] : "???";
-    ESP_LOGI(TAG, "Initializing LED strip driver on GPIO%d with %d LEDs (max brightness %d, order %s)",
-             s_light_driver.gpio_pin, s_light_driver.num_leds, s_light_driver.max_brightness, order_name);
+    const char *white_mode_name = (s_light_driver.white_mode <= WHITE_MODE_MAX)
+                                  ? white_mode_names[s_light_driver.white_mode] : "???";
+    ESP_LOGI(TAG, "Initializing LED strip driver on GPIO%d with %d LEDs (max brightness %d, order %s, white mode %s, gains %d/%d/%d/%d)",
+             s_light_driver.gpio_pin, s_light_driver.num_leds, s_light_driver.max_brightness,
+             order_name, white_mode_name, s_light_driver.gain_r, s_light_driver.gain_g,
+             s_light_driver.gain_b, s_light_driver.gain_w);
 
     // Create mutex for thread-safe access
     s_light_driver.mutex = xSemaphoreCreateMutex();
