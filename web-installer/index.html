@@ -944,6 +944,7 @@
                                 <option value="ws2812b">WS2812B</option>
                                 <option value="ws2811">WS2811</option>
                                 <option value="sk6812">SK6812 (RGBW)</option>
+                                <option value="ws2805">WS2805 (RGBCCT)</option>
                             </select>
                         </div>
                         <div class="config-item">
@@ -1065,7 +1066,9 @@
                     <p><strong>config</strong> <span>Show current settings</span></p>
                     <p><strong>set leds &lt;n&gt;</strong> <span>Set LED count</span></p>
                     <p><strong>set gpio &lt;n&gt;</strong> <span>Set data pin</span></p>
-                    <p><strong>set type &lt;type&gt;</strong> <span>ws2812b, ws2811, sk6812</span></p>
+                    <p><strong>set type &lt;type&gt;</strong> <span>ws2812b, ws2811, sk6812, ws2805</span></p>
+                    <p><strong>set bin &lt;n|off&gt;</strong> <span>WS2805 backup data GPIO</span></p>
+                    <p><strong>set white_order &lt;o&gt;</strong> <span>WS2805 whites: ww_cw, cw_ww</span></p>
                     <p><strong>set order &lt;order&gt;</strong> <span>grb, rgb, bgr, rbg</span></p>
                     <p><strong>set brightness &lt;n&gt;</strong> <span>Max brightness 1-255</span></p>
                     <p><strong>save</strong> <span>Save config to flash</span></p>
