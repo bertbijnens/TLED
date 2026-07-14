@@ -41,11 +41,14 @@ jobs:
 
       - name: Build firmware
         run: |
+          # Note: esp-matter's export.sh changes the working directory,
+          # so cd back to the project before invoking idf.py
           docker run --rm -v "$PWD:/project" -w /project \
             espressif/esp-matter:latest_idf_v5.4.1 \
             bash -c 'git config --global --add safe.directory "*" \
               && . $IDF_PATH/export.sh \
               && . $ESP_MATTER_PATH/export.sh \
+              && cd /project \
               && idf.py build'
 
       - name: Print firmware size
