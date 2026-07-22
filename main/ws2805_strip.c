@@ -284,9 +284,12 @@ esp_err_t ws2805_strip_set_pixel(ws2805_strip_handle_t strip, uint32_t index,
     ESP_RETURN_ON_FALSE(strip != NULL, ESP_ERR_INVALID_ARG, TAG, "strip is NULL");
     ESP_RETURN_ON_FALSE(index < strip->num_pixels, ESP_ERR_INVALID_ARG, TAG, "index out of range");
 
+    // Wire order matches WS2812B convention (and WLED's NeoGrbwwFeature): G, R, B, W1, W2.
+    // Callers pass logical (r, g, b) after any RGB-order remapping; this function applies
+    // the final GRB swap so RGB_ORDER_GRB (the default) means "GRB on the wire".
     uint8_t *pixel = &strip->buffer[index * WS2805_BYTES_PER_PIXEL];
-    pixel[0] = r;
-    pixel[1] = g;
+    pixel[0] = g;
+    pixel[1] = r;
     pixel[2] = b;
     pixel[3] = w1;
     pixel[4] = w2;
