@@ -297,18 +297,21 @@ esp_err_t ws2805_strip_refresh(ws2805_strip_handle_t strip)
 {
     ESP_RETURN_ON_FALSE(strip != NULL, ESP_ERR_INVALID_ARG, TAG, "strip is NULL");
 
-    // Stop the running loop so we can restart it with the updated buffer.
-    // rmt_tx_stop() signals a stop; rmt_tx_wait_all_done() blocks until the
-    // in-progress iteration finishes (at most one frame duration).
+    // Disable the channel to abort the running loop, then immediately re-enable
+    // so rmt_transmit can restart it with the updated buffer.
     if (strip->loop_running) {
-        rmt_tx_stop(strip->channel);
-        rmt_tx_wait_all_done(strip->channel, pdMS_TO_TICKS(2000));
+        rmt_disable(strip->channel);
         strip->loop_running = false;
     }
 
+    esp_err_t err = rmt_enable(strip->channel);
+    if (err != ESP_OK) {
+        return err;
+    }
+
     rmt_transmit_config_t tx_config = { .loop_count = -1 };
-    esp_err_t err = rmt_transmit(strip->channel, strip->encoder, strip->buffer,
-                                 strip->num_pixels * WS2805_BYTES_PER_PIXEL, &tx_config);
+    err = rmt_transmit(strip->channel, strip->encoder, strip->buffer,
+                       strip->num_pixels * WS2805_BYTES_PER_PIXEL, &tx_config);
     if (err == ESP_OK) {
         strip->loop_running = true;
     }
@@ -329,10 +332,7 @@ esp_err_t ws2805_strip_del(ws2805_strip_handle_t strip)
         return ESP_OK;
     }
     if (strip->channel) {
-        if (strip->loop_running) {
-            rmt_tx_stop(strip->channel);
-            rmt_tx_wait_all_done(strip->channel, pdMS_TO_TICKS(2000));
-        }
+        // Disable unconditionally: stops the loop if running, or is a no-op if already idle.
         rmt_disable(strip->channel);
         rmt_del_channel(strip->channel);
     }
