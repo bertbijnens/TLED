@@ -1271,14 +1271,17 @@ app_driver_handle_t app_driver_light_init(void)
     s_light_driver.is_rgbw = (config->chipset == CHIPSET_SK6812);
 
     // Buffer size: use max of configured LEDs or 100 to clear leftover data
+    // (WS2805 uses the exact num_leds count since its driver handles clearing via loop mode)
     uint16_t strip_buffer_size = s_light_driver.num_leds > 100 ? s_light_driver.num_leds : 100;
 
     if (config->chipset == CHIPSET_WS2805) {
-        // WS2805 is 5 channels per IC - handled by the dedicated driver
+        // WS2805 is 5 channels per IC - handled by the dedicated driver.
+        // Use exact IC count: the loop-mode driver keeps the strip receiving data
+        // continuously so there is no need to over-provision to clear leftover ICs.
         ws2805_strip_config_t ws2805_config = {
             .gpio_num = s_light_driver.gpio_pin,
             .bin_gpio_num = (config->bin_gpio == TLED_BIN_GPIO_DISABLED) ? -1 : config->bin_gpio,
-            .num_pixels = strip_buffer_size,
+            .num_pixels = s_light_driver.num_leds,
         };
 
         esp_err_t err = ws2805_strip_new(&ws2805_config, &s_light_driver.ws2805);
