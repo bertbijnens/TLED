@@ -14,7 +14,10 @@
 
 set -euo pipefail
 
-REPO="bertbijnens/TLED"
+# Detect repo from git remote so this works for any fork
+REPO=$(git -C "$(dirname "$0")" remote get-url origin 2>/dev/null \
+    | sed 's|.*github.com[:/]\(.*\)\.git|\1|; s|.*github.com[:/]\(.*\)|\1|')
+[[ -z "$REPO" ]] && die "Could not detect GitHub repo from git remote. Set REPO manually."
 ARTIFACT="tled-firmware"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FIRMWARE_DIR="$SCRIPT_DIR/firmware"
