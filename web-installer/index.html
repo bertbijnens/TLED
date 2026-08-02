@@ -603,6 +603,61 @@
         }
 
         /* Terminal */
+        .terminal-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.4rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .terminal-btn {
+            font-family: 'JetBrains Mono', monospace;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            line-height: 1.4;
+        }
+
+        .terminal-btn:hover {
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+
+        .console-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .console-wrapper:-webkit-full-screen {
+            background: #0a0c0f;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .console-wrapper:fullscreen {
+            background: #0a0c0f;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .console-wrapper:fullscreen .terminal,
+        .console-wrapper:-webkit-full-screen .terminal {
+            flex: 1;
+            height: auto !important;
+            resize: none;
+        }
+
         .terminal {
             background: #000;
             border: 1px solid var(--border);
@@ -611,10 +666,12 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.8rem;
             height: 220px;
+            min-height: 120px;
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-all;
             line-height: 1.5;
+            resize: vertical;
         }
 
         .terminal::-webkit-scrollbar {
@@ -971,16 +1028,22 @@
 
             <div class="card">
                 <h2>Serial Console</h2>
-                <div id="terminal" class="terminal"></div>
-                <div class="serial-input-row">
-                    <input type="text" id="serialInput" placeholder="Enter command..." disabled>
-                    <button id="sendBtn" class="btn" disabled>Send</button>
+                <div class="terminal-toolbar">
+                    <button class="terminal-btn" id="clearTermBtn" title="Clear console">CLR</button>
+                    <button class="terminal-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
                 </div>
-                <div class="quick-cmds">
-                    <button class="quick-cmd" data-cmd="help" disabled>help</button>
-                    <button class="quick-cmd" data-cmd="config" disabled>config</button>
-                    <button class="quick-cmd" data-cmd="reboot" disabled>reboot</button>
-                    <button class="quick-cmd danger" data-cmd="factory" disabled>factory reset</button>
+                <div id="consoleWrapper" class="console-wrapper">
+                    <div id="terminal" class="terminal"></div>
+                    <div class="serial-input-row">
+                        <input type="text" id="serialInput" placeholder="Enter command..." disabled>
+                        <button id="sendBtn" class="btn" disabled>Send</button>
+                    </div>
+                    <div class="quick-cmds">
+                        <button class="quick-cmd" data-cmd="help" disabled>help</button>
+                        <button class="quick-cmd" data-cmd="config" disabled>config</button>
+                        <button class="quick-cmd" data-cmd="reboot" disabled>reboot</button>
+                        <button class="quick-cmd danger" data-cmd="factory" disabled>factory reset</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1144,13 +1207,47 @@
         const serialInput = document.getElementById('serialInput');
         const sendBtn = document.getElementById('sendBtn');
         let serialBuffer = '';
+        let parseConfigBuffer = '';
+        let tempLineEl = null;
+
+        function isNearBottom() {
+            return terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight < 60;
+        }
 
         function log(text, type = 'response') {
+            const atBottom = isNearBottom();
             const span = document.createElement('span');
             span.className = type;
             span.textContent = text;
             terminal.appendChild(span);
-            terminal.scrollTop = terminal.scrollHeight;
+            if (atBottom) terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        // Append incoming serial data. Temperature attribute log lines are
+        // deduplicated: the existing span is updated in place instead of
+        // appending a new line every 5 seconds.
+        function appendSerial(rawText) {
+            const atBottom = isNearBottom();
+            const parts = rawText.split(/(I \(\d+\) esp_matter_attribute:[^\n]*0x00000402[^\n]*\n?)/);
+            for (const part of parts) {
+                if (!part) continue;
+                if (/I \(\d+\) esp_matter_attribute:[^\n]*0x00000402/.test(part)) {
+                    if (tempLineEl && terminal.contains(tempLineEl)) {
+                        tempLineEl.textContent = part;
+                    } else {
+                        tempLineEl = document.createElement('span');
+                        tempLineEl.className = 'response';
+                        tempLineEl.textContent = part;
+                        terminal.appendChild(tempLineEl);
+                    }
+                } else {
+                    const span = document.createElement('span');
+                    span.className = 'response';
+                    span.textContent = part;
+                    terminal.appendChild(span);
+                }
+            }
+            if (atBottom) terminal.scrollTop = terminal.scrollHeight;
         }
 
         function updateStatus(connected) {
@@ -1222,7 +1319,7 @@
                     const { value, done } = await reader.read();
                     if (done) break;
                     if (value) {
-                        log(value);
+                        appendSerial(value);
                         try {
                             parseConfig(value);
                             checkForQRCode(value);
@@ -1253,6 +1350,8 @@
             updateStatus(false);
             log('Disconnected\n', 'prompt');
             serialBuffer = '';
+            parseConfigBuffer = '';
+            tempLineEl = null;
         }
 
         async function sendCommand(cmd) {
@@ -1384,6 +1483,31 @@
                     await sendCommand(cmd);
                     serialInput.value = '';
                 }
+            }
+        });
+
+        document.getElementById('clearTermBtn').addEventListener('click', () => {
+            terminal.innerHTML = '';
+            tempLineEl = null;
+        });
+
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const consoleWrapper = document.getElementById('consoleWrapper');
+
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                consoleWrapper.requestFullscreen().catch(err => console.warn('Fullscreen error:', err));
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                fullscreenBtn.textContent = '✕ EXIT';
+                terminal.scrollTop = terminal.scrollHeight;
+            } else {
+                fullscreenBtn.textContent = '⛶';
             }
         });
 
