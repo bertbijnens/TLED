@@ -20,6 +20,7 @@
 #include <driver/gpio.h>
 #include <esp_rom_gpio.h>
 #include <soc/gpio_struct.h>
+#include <freertos/FreeRTOS.h>
 
 #include "ws2805_strip.h"
 
