@@ -25,7 +25,18 @@ typedef enum {
     CHIPSET_WS2812B = 0,
     CHIPSET_WS2811 = 1,
     CHIPSET_SK6812 = 2,
+    CHIPSET_WS2805 = 3,     // 5-channel RGB + warm white + cool white
 } tled_chipset_t;
+
+// WS2805 white channel order: which wire channel (W1/W2) is warm vs cool.
+// Strip vendors wire W1/W2 to 3000K/6500K inconsistently.
+typedef enum {
+    WHITE_ORDER_WW_CW = 0,  // W1 = warm white, W2 = cool white (most strips)
+    WHITE_ORDER_CW_WW = 1,  // W1 = cool white, W2 = warm white
+} tled_white_order_t;
+
+// Sentinel for "BIN (backup data) pin not used"
+#define TLED_BIN_GPIO_DISABLED  0xFF
 
 // Power-on behavior options
 typedef enum {
@@ -57,6 +68,8 @@ typedef struct {
     uint8_t gain_g;             // Green channel gain (0-255)
     uint8_t gain_b;             // Blue channel gain (0-255)
     uint8_t gain_w;             // White channel gain (0-255)
+    uint8_t bin_gpio;           // WS2805 backup data GPIO (TLED_BIN_GPIO_DISABLED = off)
+    uint8_t white_order;        // WS2805 white channel order (tled_white_order_t)
     char device_name[32];       // Custom device name
     uint8_t config_version;     // Config version for migration
     bool configured;            // True if config has been set
@@ -93,8 +106,17 @@ typedef struct {
 #define TLED_DEFAULT_CHIPSET        CHIPSET_WS2811
 #elif defined(CONFIG_TLED_LED_SK6812)
 #define TLED_DEFAULT_CHIPSET        CHIPSET_SK6812
+#elif defined(CONFIG_TLED_LED_WS2805)
+#define TLED_DEFAULT_CHIPSET        CHIPSET_WS2805
 #else
 #define TLED_DEFAULT_CHIPSET        CHIPSET_WS2812B
+#endif
+
+// WS2805 BIN (backup data) pin from Kconfig (-1 = disabled)
+#if defined(CONFIG_TLED_WS2805_BIN_GPIO) && (CONFIG_TLED_WS2805_BIN_GPIO >= 0)
+#define TLED_DEFAULT_BIN_GPIO       CONFIG_TLED_WS2805_BIN_GPIO
+#else
+#define TLED_DEFAULT_BIN_GPIO       TLED_BIN_GPIO_DISABLED
 #endif
 
 #define TLED_DEFAULT_DEVICE_NAME    "TLED"
@@ -102,7 +124,8 @@ typedef struct {
 #define TLED_DEFAULT_WHITE_MODE     WHITE_MODE_ACCURATE
 #define TLED_DEFAULT_MANUAL_WHITE   0
 #define TLED_DEFAULT_CHANNEL_GAIN   255
-#define TLED_CONFIG_VERSION         3  // Bumped for RGBW white mixing and gains
+#define TLED_DEFAULT_WHITE_ORDER    WHITE_ORDER_WW_CW
+#define TLED_CONFIG_VERSION         4  // Bumped for WS2805 (bin_gpio, white_order)
 
 /**
  * @brief Initialize the config module

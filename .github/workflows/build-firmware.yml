@@ -1,0 +1,66 @@
+name: Build Firmware
+
+# Builds the ESP32-C6 firmware in Espressif's official esp-matter container
+# (esp-matter main + ESP-IDF v5.4.1, matching the documented dev environment).
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'web-installer/**'
+      - 'enclosure/**'
+      - 'images/**'
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'web-installer/**'
+      - 'enclosure/**'
+      - 'images/**'
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The esp-matter image is ~15 GB uncompressed; clear preinstalled
+      # software the build doesn't need so the runner doesn't run out of disk
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          df -h /
+
+      - name: Build firmware
+        run: |
+          # Note: esp-matter's export.sh changes the working directory,
+          # so cd back to the project before invoking idf.py
+          docker run --rm -v "$PWD:/project" -w /project \
+            espressif/esp-matter:latest_idf_v5.4.1 \
+            bash -c 'git config --global --add safe.directory "*" \
+              && . $IDF_PATH/export.sh \
+              && . $ESP_MATTER_PATH/export.sh \
+              && cd /project \
+              && idf.py build'
+
+      - name: Print firmware size
+        run: ls -lh build/tled.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tled-firmware
+          path: |
+            build/tled.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/ota_data_initial.bin
+          if-no-files-found: error
