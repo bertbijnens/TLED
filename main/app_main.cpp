@@ -297,21 +297,37 @@ extern "C" void app_main()
     endpoint_t *endpoint = dimmable_light::create(node, &light_config, ENDPOINT_FLAG_NONE, light_handle);
     ABORT_APP_ON_FAILURE(endpoint != nullptr, ESP_LOGE(TAG, "Failed to create dimmable light endpoint"));
 
-    /* Add ColorControl cluster with HSV feature only */
+    /* Add ColorControl cluster with HSV feature (plus ColorTemperature on WS2805) */
+    bool has_color_temp = (config->chipset == CHIPSET_WS2805);
+
     cluster::color_control::config_t color_config;
     color_config.color_mode = static_cast<uint8_t>(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
     color_config.enhanced_color_mode = static_cast<uint8_t>(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
-    color_config.color_capabilities = 1;  // Hue/Saturation supported
+    color_config.color_capabilities = has_color_temp ? 0x11 : 0x01;  // bit0 = HS, bit4 = CT
     cluster_t *color_cluster = cluster::color_control::create(endpoint, &color_config, CLUSTER_FLAG_SERVER);
 
-    /* Add only HSV feature */
+    /* Add HSV feature */
     cluster::color_control::feature::hue_saturation::config_t hs_config;
     hs_config.current_hue = 0;
     hs_config.current_saturation = 254;
     cluster::color_control::feature::hue_saturation::add(color_cluster, &hs_config);
 
+    /* WS2805 has dedicated warm/cool white channels - expose color temperature.
+     * Note: adding/removing this feature changes the cluster shape, so switching
+     * strip type to/from WS2805 requires re-commissioning the device. */
+    if (has_color_temp) {
+        cluster::color_control::feature::color_temperature::config_t ct_config;
+        ct_config.color_temperature_mireds = TLED_DEFAULT_CT_MIREDS;
+        ct_config.color_temp_physical_min_mireds = TLED_CT_MIN_MIREDS;  // 6500K cool
+        ct_config.color_temp_physical_max_mireds = TLED_CT_MAX_MIREDS;  // 3000K warm
+        ct_config.couple_color_temp_to_level_min_mireds = TLED_CT_MIN_MIREDS;
+        ct_config.start_up_color_temperature_mireds = nullable<uint16_t>(TLED_DEFAULT_CT_MIREDS);
+        cluster::color_control::feature::color_temperature::add(color_cluster, &ct_config);
+    }
+
     light_endpoint_id = endpoint::get_id(endpoint);
-    ESP_LOGI(TAG, "Color Light (HSV) created with endpoint_id %d", light_endpoint_id);
+    ESP_LOGI(TAG, "Color Light (HSV%s) created with endpoint_id %d",
+             has_color_temp ? "+CT" : "", light_endpoint_id);
 
     /* Create Temperature Sensor endpoint to expose chip temperature */
     temperature_sensor::config_t temp_config;
