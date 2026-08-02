@@ -55,7 +55,6 @@ struct ws2805_strip_t {
     rmt_encoder_handle_t encoder;
     uint32_t num_pixels;
     uint8_t *buffer;                // num_pixels * 5 bytes, wire order R,G,B,W1,W2
-    bool loop_running;              // true while the RMT infinite loop is active
 };
 
 static size_t ws2805_encode(rmt_encoder_t *encoder, rmt_channel_handle_t channel,
@@ -253,20 +252,7 @@ esp_err_t ws2805_strip_new(const ws2805_strip_config_t *config, ws2805_strip_han
         }
     }
 
-    // Start the infinite loop immediately with the all-zeros buffer.
-    // WS2805 strips revert to their power-on white default when the data line
-    // is idle for longer than the reset threshold (~280µs). Looping continuously
-    // keeps the strip receiving frames so it never goes idle between refreshes.
-    rmt_transmit_config_t init_tx = { .loop_count = -1 };
-    err = rmt_transmit(strip->channel, strip->encoder, strip->buffer,
-                       strip->num_pixels * WS2805_BYTES_PER_PIXEL, &init_tx);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start RMT loop: %s", esp_err_to_name(err));
-        goto cleanup;
-    }
-    strip->loop_running = true;
-
-    ESP_LOGI(TAG, "WS2805 strip created: %lu ICs on GPIO%d%s (continuous loop mode)",
+    ESP_LOGI(TAG, "WS2805 strip created: %lu ICs on GPIO%d%s",
              (unsigned long)config->num_pixels, config->gpio_num,
              config->bin_gpio_num >= 0 ? " (+BIN mirror)" : "");
 
@@ -300,23 +286,16 @@ esp_err_t ws2805_strip_refresh(ws2805_strip_handle_t strip)
 {
     ESP_RETURN_ON_FALSE(strip != NULL, ESP_ERR_INVALID_ARG, TAG, "strip is NULL");
 
-    // Disable the channel to abort the running loop, then immediately re-enable
-    // so rmt_transmit can restart it with the updated buffer.
-    if (strip->loop_running) {
-        rmt_disable(strip->channel);
-        strip->loop_running = false;
-    }
-
-    esp_err_t err = rmt_enable(strip->channel);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    rmt_transmit_config_t tx_config = { .loop_count = -1 };
-    err = rmt_transmit(strip->channel, strip->encoder, strip->buffer,
-                       strip->num_pixels * WS2805_BYTES_PER_PIXEL, &tx_config);
+    // Single-shot transmission: send one frame and block until done (including the
+    // 300µs reset code). This matches the led_strip component's behaviour and avoids
+    // the race where the RMT reads the buffer while the CPU is writing to it.
+    // WS2805 ICs hold their last latched colour between frames, so continuous looping
+    // is not required.
+    rmt_transmit_config_t tx_config = { .loop_count = 0 };
+    esp_err_t err = rmt_transmit(strip->channel, strip->encoder, strip->buffer,
+                                 strip->num_pixels * WS2805_BYTES_PER_PIXEL, &tx_config);
     if (err == ESP_OK) {
-        strip->loop_running = true;
+        err = rmt_tx_wait_all_done(strip->channel, portMAX_DELAY);
     }
     return err;
 }
@@ -335,7 +314,7 @@ esp_err_t ws2805_strip_del(ws2805_strip_handle_t strip)
         return ESP_OK;
     }
     if (strip->channel) {
-        // Disable unconditionally: stops the loop if running, or is a no-op if already idle.
+        rmt_tx_wait_all_done(strip->channel, pdMS_TO_TICKS(100));
         rmt_disable(strip->channel);
         rmt_del_channel(strip->channel);
     }
