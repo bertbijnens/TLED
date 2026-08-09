@@ -135,6 +135,8 @@ static void process_command(const char *cmd) {
             serial_write("Rebooting in 2 seconds...\r\n");
             vTaskDelay(pdMS_TO_TICKS(2000));
             esp_restart();
+        } else if (err == ESP_ERR_INVALID_ARG) {
+            serial_write("Error: config is invalid (e.g. BIN pin == data pin). Fix the setting first.\r\n");
         } else {
             serial_printf("Error saving config: %s\r\n", esp_err_to_name(err));
         }
@@ -271,11 +273,13 @@ static void handle_set_command(const char *param, const char *value) {
     }
     else if (strcmp(param, "gpio") == 0) {
         int n = atoi(value);
-        if (tled_config_validate_gpio((uint8_t)n)) {
+        if (!tled_config_validate_gpio((uint8_t)n)) {
+            serial_write("Error: invalid GPIO pin (avoid 9, 12-13, 15)\r\n");
+        } else if (cfg->bin_gpio != TLED_BIN_GPIO_DISABLED && (uint8_t)n == cfg->bin_gpio) {
+            serial_printf("Error: GPIO %d already used as BIN pin; run 'set bin off' first\r\n", n);
+        } else {
             cfg->gpio_pin = n;
             serial_printf("Set gpio = %d\r\n", n);
-        } else {
-            serial_write("Error: invalid GPIO pin (avoid 9, 12-13, 15)\r\n");
         }
     }
     else if (strcmp(param, "brightness") == 0) {
@@ -311,12 +315,15 @@ static void handle_set_command(const char *param, const char *value) {
             cfg->bin_gpio = TLED_BIN_GPIO_DISABLED;
             serial_write("Set bin = off (BIN backup line disabled)\r\n");
         } else {
-            int n = atoi(value);
-            if (tled_config_validate_gpio((uint8_t)n) && (uint8_t)n != cfg->gpio_pin) {
-                cfg->bin_gpio = n;
-                serial_printf("Set bin = %d\r\n", n);
-            } else {
+            char *end = NULL;
+            long n = strtol(value, &end, 10);
+            if (end == value || *end != '\0' || n < 0 || n > 255) {
+                serial_write("Error: BIN GPIO must be a number or 'off'\r\n");
+            } else if (!tled_config_validate_gpio((uint8_t)n) || (uint8_t)n == cfg->gpio_pin) {
                 serial_write("Error: invalid BIN GPIO (avoid 9, 12-13, 15 and the data pin)\r\n");
+            } else {
+                cfg->bin_gpio = (uint8_t)n;
+                serial_printf("Set bin = %d\r\n", (int)n);
             }
         }
     }

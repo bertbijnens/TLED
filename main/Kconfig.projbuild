@@ -55,6 +55,10 @@ menu "TLED Configuration"
             keeps working even if a single IC in the chain fails.
             Set to -1 to disable (tie the strip's BIN to DIN externally,
             or leave it unconnected).
+            Avoid reserved pins: GPIO9 (boot button), GPIO12-13 (USB),
+            GPIO15 (onboard LED), and the pin already used for TLED_GPIO_PIN.
+            The serial 'set bin' command enforces these constraints at runtime;
+            menuconfig does not validate them.
 
     choice TLED_RGB_ORDER
         prompt "RGB byte order"

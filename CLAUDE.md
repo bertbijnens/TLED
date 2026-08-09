@@ -109,8 +109,9 @@ The script will:
 ## Key Implementation Details
 
 ### Matter Device Type
-Using `dimmable_light` as base + manually added ColorControl cluster with HSV-only feature.
-This avoids XY and ColorTemperature modes that caused issues with Home Assistant.
+Using `dimmable_light` as base + manually added ColorControl cluster with HSV feature.
+XY mode is not added (caused issues with Home Assistant). ColorTemperature mode is added
+conditionally — only when the chipset is WS2805, which has dedicated warm/cool white channels.
 
 ### Color Control
 - HSV mode (no XY)
@@ -122,7 +123,7 @@ This avoids XY and ColorTemperature modes that caused issues with Home Assistant
 ### WS2805 (RGBCCT) Support
 - 5 channels per IC: R, G, B, W1 (warm), W2 (cool); one IC drives a group of ~6 LEDs, so `leds` = IC count
 - Driven by the standalone `ws2805_strip.c` RMT driver (the led_strip component only supports 3/4-byte pixels)
-- Wire order R,G,B,W1,W2, 40 bits/IC, WS2812-style NRZ timing, reset ≥280µs
+- Wire order G,R,B,W1,W2, 40 bits/IC, WS2812-style NRZ timing, reset ≥280µs
 - Optional BIN (DIN2 backup) line: the DIN waveform is mirrored to a second GPIO via the GPIO matrix (`set bin <pin>`)
 - `set white_order ww_cw|cw_ww` swaps warm/cool if the strip is wired the other way
 - CT mode drives WW/CW only (RGB off); color mode drives RGB only (whites off); blended mode not implemented

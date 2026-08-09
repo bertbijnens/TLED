@@ -354,6 +354,11 @@ esp_err_t tled_config_save(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (!validate_config(&s_config)) {
+        ESP_LOGE(TAG, "Refusing to save invalid config (BIN/GPIO collision or other constraint)");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
