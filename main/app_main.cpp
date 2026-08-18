@@ -13,6 +13,7 @@
 #include <esp_matter.h>
 #include <esp_matter_console.h>
 #include <esp_matter_ota.h>
+#include <esp_ota_ops.h>
 
 #include <common_macros.h>
 
@@ -130,6 +131,9 @@ static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
     switch (event->Type) {
     case chip::DeviceLayer::DeviceEventType::kInterfaceIpAddressChanged:
         ESP_LOGI(TAG, "Interface IP Address changed");
+        // Network is up and the firmware is operating normally — confirm this
+        // boot as valid so the bootloader doesn't roll back on next restart.
+        esp_ota_mark_app_valid_cancel_rollback();
         break;
 
     case chip::DeviceLayer::DeviceEventType::kCommissioningComplete:
@@ -357,6 +361,11 @@ extern "C" void app_main()
     ABORT_APP_ON_FAILURE(err == ESP_OK, ESP_LOGE(TAG, "Failed to start Matter, err:%d", err));
 
     ESP_LOGI(TAG, "Matter started successfully");
+
+    /* Initialize Matter OTA requestor so the device can receive firmware
+     * updates over the fabric. Rollback confirmation happens in app_event_cb
+     * once the network interface is up (kInterfaceIpAddressChanged). */
+    esp_matter_ota_requestor_init();
 
     /* Print commissioning QR code */
     PrintOnboardingCodes(chip::RendezvousInformationFlags(chip::RendezvousInformationFlag::kBLE));
