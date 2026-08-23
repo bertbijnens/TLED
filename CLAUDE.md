@@ -21,6 +21,7 @@ ESP32-C6 based LED controller using Matter protocol over Thread network. Like WL
 - **Power-on behavior** - restore/on/off modes via serial config
 - **Temperature sensor** - internal chip temp monitoring with warnings
 - **Temperature cluster** - chip temp exposed to Home Assistant as sensor entity
+- **WS2805 RGBCCT strips** - 5-channel (RGB + warm/cool white) support with Matter Color Temperature control
 
 ### Hardware Configuration
 - **Board:** DFRobot Beetle ESP32-C6 (or any ESP32-C6)
@@ -86,6 +87,8 @@ The script will:
 │   ├── app_main.cpp        # Matter setup, endpoint creation
 │   ├── app_driver.cpp      # LED strip driver, NVS persistence
 │   ├── app_driver.h        # Driver interface
+│   ├── ws2805_strip.c      # WS2805 5-channel (RGBCCT) RMT driver
+│   ├── ws2805_strip.h      # WS2805 driver interface
 │   ├── app_config.h        # Pin definitions, LED count
 │   ├── app_nvs_config.h    # Runtime config types/API
 │   ├── app_nvs_config.cpp  # Config persistence to NVS
@@ -106,14 +109,25 @@ The script will:
 ## Key Implementation Details
 
 ### Matter Device Type
-Using `dimmable_light` as base + manually added ColorControl cluster with HSV-only feature.
-This avoids XY and ColorTemperature modes that caused issues with Home Assistant.
+Using `dimmable_light` as base + manually added ColorControl cluster with the HSV feature.
+XY mode is not added (it caused issues with Home Assistant). ColorTemperature is added
+conditionally — only when the chipset is WS2805, which has dedicated warm/cool white channels.
 
 ### Color Control
-- HSV mode only (no XY, no ColorTemp)
+- HSV mode (no XY)
 - Hue: 0-254 (Matter range) → 0-360 degrees
 - Saturation: 0-254 → 0-100%
 - Brightness via LevelControl cluster: 0-254
+- On WS2805 strips only: ColorTemperature feature added (153-333 mireds ≈ 6500K-3000K)
+
+### WS2805 (RGBCCT) Support
+- 5 channels per IC: R, G, B, W1 (warm), W2 (cool); one IC drives a group of ~6 LEDs, so `leds` = IC count
+- Driven by the standalone `ws2805_strip.c` RMT driver (the led_strip component only supports 3/4-byte pixels)
+- Wire order G,R,B,W1,W2 (WS2812B/WLED convention), 40 bits/IC, WS2812-style NRZ timing, reset ≥280µs
+- Optional BIN (DIN2 backup) line: the DIN waveform is mirrored to a second GPIO via the GPIO matrix (`set bin <pin>`)
+- `set white_order ww_cw|cw_ww` swaps warm/cool if the strip is wired the other way
+- CT mode drives WW/CW only (RGB off); color mode drives RGB only (whites off); blended mode not implemented
+- Switching type to/from ws2805 changes cluster shape → device must be re-commissioned
 
 ### NVS Persistence
 Saves to `tled_state` namespace:
