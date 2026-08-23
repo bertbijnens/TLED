@@ -3,7 +3,8 @@
  * WS2805 5-channel (RGB + WW + CW) strip driver interface
  *
  * The WS2805 uses the same single-wire NRZ protocol as the WS2812 family,
- * but carries 40 bits per IC in the order R, G, B, W1, W2 (high bit first).
+ * but carries 40 bits per IC in the order G, R, B, W1, W2 (high bit first) -
+ * the same GRB convention as WS2812B (WLED's NeoGrbwwFeature).
  * The espressif/led_strip component only supports 3/4-byte pixels, so this
  * standalone RMT-based driver handles the 5-byte format.
  *

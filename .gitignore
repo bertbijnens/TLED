@@ -28,5 +28,6 @@ web-installer/firmware-*/
 .agents/
 .claude/
 .openscad-mcp/
+
 # Secrets
 .env

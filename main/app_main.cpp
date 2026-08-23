@@ -303,7 +303,6 @@ extern "C" void app_main()
     cluster::color_control::config_t color_config;
     color_config.color_mode = static_cast<uint8_t>(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
     color_config.enhanced_color_mode = static_cast<uint8_t>(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
-    color_config.color_capabilities = has_color_temp ? 0x11 : 0x01;  // bit0 = HS, bit4 = CT
     cluster_t *color_cluster = cluster::color_control::create(endpoint, &color_config, CLUSTER_FLAG_SERVER);
 
     /* Add HSV feature */

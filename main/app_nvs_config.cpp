@@ -354,6 +354,13 @@ esp_err_t tled_config_save(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    // Never persist a config that would be rejected on the next boot -
+    // that would silently reset the device to defaults every restart.
+    if (!validate_config(&s_config)) {
+        ESP_LOGE(TAG, "Refusing to save invalid config");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {

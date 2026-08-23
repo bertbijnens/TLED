@@ -55,7 +55,7 @@ struct ws2805_strip_t {
     rmt_channel_handle_t channel;
     rmt_encoder_handle_t encoder;
     uint32_t num_pixels;
-    uint8_t *buffer;                // num_pixels * 5 bytes, wire order R,G,B,W1,W2
+    uint8_t *buffer;                // num_pixels * 5 bytes, wire order G,R,B,W1,W2
 };
 
 static size_t ws2805_encode(rmt_encoder_t *encoder, rmt_channel_handle_t channel,

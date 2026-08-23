@@ -502,7 +502,7 @@ static float lerp(float from, float to, float t)
 // Rainbow effect - cycle through hues
 static void effect_rainbow(light_driver_t *driver)
 {
-    if (driver->strip == NULL) return;
+    if (driver->strip == NULL && driver->ws2805 == NULL) return;
 
     // Use effect_step as hue offset
     uint16_t base_hue = driver->effect_step % 360;
@@ -521,7 +521,7 @@ static void effect_rainbow(light_driver_t *driver)
 // Breathing effect - pulse brightness
 static void effect_breathing(light_driver_t *driver)
 {
-    if (driver->strip == NULL) return;
+    if (driver->strip == NULL && driver->ws2805 == NULL) return;
 
     // Sine wave for smooth breathing
     float phase = (float)(driver->effect_step % 360) * 3.14159f / 180.0f;
@@ -546,7 +546,7 @@ static void effect_breathing(light_driver_t *driver)
 // Candle flicker effect
 static void effect_candle(light_driver_t *driver)
 {
-    if (driver->strip == NULL) return;
+    if (driver->strip == NULL && driver->ws2805 == NULL) return;
 
     // Random flicker with warm color
     uint8_t max_val = (driver->brightness * STANDARD_BRIGHTNESS_MAX) / MATTER_BRIGHTNESS_MAX;
@@ -569,7 +569,7 @@ static void effect_candle(light_driver_t *driver)
 // Chase effect - moving dot
 static void effect_chase(light_driver_t *driver)
 {
-    if (driver->strip == NULL) return;
+    if (driver->strip == NULL && driver->ws2805 == NULL) return;
 
     // Get current color
     uint16_t hue = (driver->hue * STANDARD_HUE_MAX) / MATTER_HUE_MAX;
@@ -621,7 +621,7 @@ static void transition_task(void *arg)
                 uint8_t bri = driver->brightness;
                 xSemaphoreGive(driver->mutex);
 
-                ESP_LOGI(TAG, "HSV debounce complete: H=%d S=%d, starting transition", hue, sat);
+                ESP_LOGI(TAG, "Debounce complete: H=%d S=%d, starting transition", hue, sat);
                 start_transition(driver, hue, sat, bri, TLED_DEFAULT_TRANSITION_MS);
 
                 xSemaphoreTake(driver->mutex, portMAX_DELAY);
@@ -958,8 +958,10 @@ esp_err_t app_driver_light_set_color_temp_with_transition(app_driver_handle_t ha
         return ESP_ERR_INVALID_ARG;
     }
 
+    xSemaphoreTake(driver->mutex, portMAX_DELAY);
     driver->color_temp = clamp_mireds(mireds);
     driver->color_mode = COLOR_MODE_CT;
+    xSemaphoreGive(driver->mutex);
     ESP_LOGI(TAG, "Color temp set to %d mireds (transition %lums)",
              driver->color_temp, (unsigned long)transition_ms);
 
@@ -1271,17 +1273,15 @@ app_driver_handle_t app_driver_light_init(void)
     s_light_driver.is_rgbw = (config->chipset == CHIPSET_SK6812);
 
     // Buffer size: use max of configured LEDs or 100 to clear leftover data
-    // (WS2805 uses the exact num_leds count since its driver handles clearing via loop mode)
+    // (applies to WS2805 too - the extra ICs are zeroed on every refresh)
     uint16_t strip_buffer_size = s_light_driver.num_leds > 100 ? s_light_driver.num_leds : 100;
 
     if (config->chipset == CHIPSET_WS2805) {
         // WS2805 is 5 channels per IC - handled by the dedicated driver.
-        // Use exact IC count: the loop-mode driver keeps the strip receiving data
-        // continuously so there is no need to over-provision to clear leftover ICs.
         ws2805_strip_config_t ws2805_config = {
             .gpio_num = s_light_driver.gpio_pin,
             .bin_gpio_num = (config->bin_gpio == TLED_BIN_GPIO_DISABLED) ? -1 : config->bin_gpio,
-            .num_pixels = s_light_driver.num_leds,
+            .num_pixels = strip_buffer_size,
         };
 
         esp_err_t err = ws2805_strip_new(&ws2805_config, &s_light_driver.ws2805);
